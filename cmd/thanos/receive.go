@@ -45,6 +45,14 @@ func registerReceive(m map[string]setupFunc, app *kingpin.Application, name stri
 
 	objStoreConfig := regCommonObjStoreFlags(cmd, "", false)
 
+	minBlock := modelDuration(cmd.Flag("storage.tsdb.min-block-duration",
+		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").Default("2h").
+		Hidden())
+
+	maxBlock := modelDuration(cmd.Flag("storage.tsdb.max-block-duration",
+		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").Default("2h").
+		Hidden())
+
 	retention := modelDuration(cmd.Flag("tsdb.retention", "How long to retain raw samples on local storage. 0d - disables this retention").Default("15d"))
 
 	hashringsFile := cmd.Flag("receive.hashrings-file", "Path to file that contains the hashring configuration.").
@@ -101,6 +109,8 @@ func registerReceive(m map[string]setupFunc, app *kingpin.Application, name stri
 			*dataDir,
 			objStoreConfig,
 			lset,
+			*minBlock,
+			*maxBlock,
 			*retention,
 			cw,
 			*local,
@@ -125,6 +135,8 @@ func runReceive(
 	dataDir string,
 	objStoreConfig *pathOrContent,
 	lset labels.Labels,
+	minBlock model.Duration,
+	maxBlock model.Duration,
 	retention model.Duration,
 	cw *receive.ConfigWatcher,
 	endpoint string,
@@ -138,8 +150,8 @@ func runReceive(
 	tsdbCfg := &tsdb.Options{
 		RetentionDuration: retention,
 		NoLockfile:        true,
-		MinBlockDuration:  model.Duration(time.Hour * 2),
-		MaxBlockDuration:  model.Duration(time.Hour * 2),
+		MinBlockDuration:  minBlock,
+		MaxBlockDuration:  maxBlock,
 	}
 
 	localStorage := &tsdb.ReadyStorage{}
