@@ -11,6 +11,7 @@ import (
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/thanos-io/thanos/pkg/model"
 	"github.com/thanos-io/thanos/pkg/objstore/client"
 	"github.com/thanos-io/thanos/pkg/runutil"
 	"github.com/thanos-io/thanos/pkg/store"
@@ -49,6 +50,18 @@ func registerStore(m map[string]setupFunc, app *kingpin.Application, name string
 	blockSyncConcurrency := cmd.Flag("block-sync-concurrency", "Number of goroutines to use when syncing blocks from object storage.").
 		Default("20").Int()
 
+	minBlockStartTime := model.TimeOrDuration(cmd.Flag("min-block-start-time", "Start of time range limit to serve.").
+		Default("0000-01-01T00:00:00Z"))
+
+	maxBlockStartTime := model.TimeOrDuration(cmd.Flag("max-block-start-time", "End of time range limit to serve.").
+		Default("9999-12-31T23:59:59Z"))
+
+	minBlockEndTime := model.TimeOrDuration(cmd.Flag("min-block-end-time", "Start of time range limit to serve.").
+		Default("0000-01-01T00:00:00Z"))
+
+	maxBlockEndTime := model.TimeOrDuration(cmd.Flag("max-block-end-time", "End of time range limit to serve.").
+		Default("9999-12-31T23:59:59Z"))
+
 	m[name] = func(g *run.Group, logger log.Logger, reg *prometheus.Registry, tracer opentracing.Tracer, debugLogging bool) error {
 		return runStore(g,
 			logger,
@@ -69,6 +82,12 @@ func registerStore(m map[string]setupFunc, app *kingpin.Application, name string
 			debugLogging,
 			*syncInterval,
 			*blockSyncConcurrency,
+			&store.BlockFilterConfig{
+				MinBlockStartTime: *minBlockStartTime,
+				MaxBlockStartTime: *maxBlockStartTime,
+				MinBlockEndTime:   *minBlockEndTime,
+				MaxBlockEndTime:   *maxBlockEndTime,
+			},
 		)
 	}
 }
@@ -94,6 +113,7 @@ func runStore(
 	verbose bool,
 	syncInterval time.Duration,
 	blockSyncConcurrency int,
+	blockFilterConf *store.BlockFilterConfig,
 ) error {
 	{
 		confContentYaml, err := objStoreConfig.Content()
@@ -135,6 +155,7 @@ func runStore(
 			maxConcurrent,
 			verbose,
 			blockSyncConcurrency,
+			blockFilterConf,
 		)
 		if err != nil {
 			return errors.Wrap(err, "create object storage store")
