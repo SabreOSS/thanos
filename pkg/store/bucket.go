@@ -32,6 +32,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 	"github.com/thanos-io/thanos/pkg/component"
 	"github.com/thanos-io/thanos/pkg/extprom"
+	"github.com/thanos-io/thanos/pkg/model"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/pool"
 	"github.com/thanos-io/thanos/pkg/runutil"
@@ -182,6 +183,11 @@ type indexCache interface {
 	Series(b ulid.ULID, id uint64) ([]byte, bool)
 }
 
+type BlockFilterConfig struct {
+	MinBlockStartTime, MaxBlockStartTime model.TimeOrDurationValue
+	MinBlockEndTime, MaxBlockEndTime     model.TimeOrDurationValue
+}
+
 // BucketStore implements the store API backed by a bucket. It loads all index
 // files to local disk.
 type BucketStore struct {
@@ -208,6 +214,8 @@ type BucketStore struct {
 	// samplesLimiter limits the number of samples per each Series() call.
 	samplesLimiter *Limiter
 	partitioner    partitioner
+
+	blockFilterConf *BlockFilterConfig
 }
 
 // NewBucketStore creates a new bucket backed store that implements the store API against
@@ -223,6 +231,7 @@ func NewBucketStore(
 	maxConcurrent int,
 	debugLogging bool,
 	blockSyncConcurrency int,
+	blockFilterConf *BlockFilterConfig,
 ) (*BucketStore, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -254,8 +263,9 @@ func NewBucketStore(
 			maxConcurrent,
 			extprom.WrapRegistererWithPrefix("thanos_bucket_store_series_", reg),
 		),
-		samplesLimiter: NewLimiter(maxSampleCount, metrics.queriesDropped),
-		partitioner:    gapBasedPartitioner{maxGapSize: maxGapSize},
+		samplesLimiter:  NewLimiter(maxSampleCount, metrics.queriesDropped),
+		partitioner:     gapBasedPartitioner{maxGapSize: maxGapSize},
+		blockFilterConf: blockFilterConf,
 	}
 	s.metrics = metrics
 
@@ -309,6 +319,17 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 		if err != nil {
 			return nil
 		}
+
+		inRange, err := s.isBlockInMinMaxRange(ctx, id)
+		if err != nil {
+			level.Warn(s.logger).Log("msg", "error parsing block range", "block", id, "err", err)
+			return nil
+		}
+
+		if !inRange {
+			return nil
+		}
+
 		allIDs[id] = struct{}{}
 
 		if b := s.getBlock(id); b != nil {
@@ -375,6 +396,37 @@ func (s *BucketStore) numBlocks() int {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 	return len(s.blocks)
+}
+
+func (s *BucketStore) isBlockInMinMaxRange(ctx context.Context, id ulid.ULID) (bool, error) {
+	dir := filepath.Join(s.dir, id.String())
+
+	b := &bucketBlock{
+		logger: s.logger,
+		bucket: s.bucket,
+		id:     id,
+		dir:    dir,
+	}
+	if err := b.loadMeta(ctx, id); err != nil {
+		return false, err
+	}
+
+	// We check for blocks in configured minTime, maxTime range
+	switch {
+	case b.meta.MinTime < s.blockFilterConf.MinBlockStartTime.PrometheusTimestamp():
+		return false, nil
+
+	case b.meta.MinTime > s.blockFilterConf.MaxBlockStartTime.PrometheusTimestamp():
+		return false, nil
+
+	case b.meta.MaxTime < s.blockFilterConf.MinBlockEndTime.PrometheusTimestamp():
+		return false, nil
+
+	case b.meta.MaxTime > s.blockFilterConf.MaxBlockEndTime.PrometheusTimestamp():
+		return false, nil
+	}
+
+	return true, nil
 }
 
 func (s *BucketStore) getBlock(id ulid.ULID) *bucketBlock {
