@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"runtime"
 	"strconv"
 	"strings"
@@ -45,6 +46,7 @@ var DefaultConfig = Config{
 // Config stores the configuration for s3 bucket.
 type Config struct {
 	Bucket          string            `yaml:"bucket"`
+	Path            string            `yaml:"path"`
 	Endpoint        string            `yaml:"endpoint"`
 	Region          string            `yaml:"region"`
 	AccessKey       string            `yaml:"access_key"`
@@ -74,6 +76,7 @@ type HTTPConfig struct {
 type Bucket struct {
 	logger          log.Logger
 	name            string
+	path            string
 	client          *minio.Client
 	sse             encrypt.ServerSide
 	putUserMetadata map[string]string
@@ -172,10 +175,17 @@ func NewBucketWithConfig(logger log.Logger, config Config, component string) (*B
 		logWriter := log.NewStdlibAdapter(level.Debug(logger), log.MessageKey("s3TraceMsg"))
 		client.TraceOn(logWriter)
 	}
+	var pathprefix string
+
+	if config.Path != "" {
+		level.Info(logger).Log("msg", "data will be stored under the path", "path", config.Path)
+		pathprefix = path.Clean(config.Path) + DirDelim
+	}
 
 	bkt := &Bucket{
 		logger:          logger,
 		name:            config.Bucket,
+		path:            pathprefix,
 		client:          client,
 		sse:             sse,
 		putUserMetadata: config.PutUserMetadata,
@@ -223,21 +233,25 @@ func (b *Bucket) Iter(ctx context.Context, dir string, f func(string) error) err
 	if dir != "" {
 		dir = strings.TrimSuffix(dir, DirDelim) + DirDelim
 	}
-
-	for object := range b.client.ListObjects(b.name, dir, false, ctx.Done()) {
+	for object := range b.client.ListObjects(b.name, path.Join(b.path, dir), false, ctx.Done()) {
 		// Catch the error when failed to list objects.
 		if object.Err != nil {
 			return object.Err
 		}
+
+		key := strings.TrimPrefix(object.Key, b.path)
+
 		// This sometimes happens with empty buckets.
-		if object.Key == "" {
+		if key == "" {
 			continue
 		}
+
 		// The s3 client can also return the directory itself in the ListObjects call above.
-		if object.Key == dir {
+		if key == dir {
 			continue
 		}
-		if err := f(object.Key); err != nil {
+
+		if err := f(key); err != nil {
 			return err
 		}
 	}
@@ -256,7 +270,7 @@ func (b *Bucket) getRange(ctx context.Context, name string, off, length int64) (
 			return nil, err
 		}
 	}
-	r, err := b.client.GetObjectWithContext(ctx, b.name, name, *opts)
+	r, err := b.client.GetObjectWithContext(ctx, b.name, path.Join(b.path, name), *opts)
 	if err != nil {
 		return nil, err
 	}
@@ -275,17 +289,17 @@ func (b *Bucket) getRange(ctx context.Context, name string, off, length int64) (
 
 // Get returns a reader for the given object name.
 func (b *Bucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	return b.getRange(ctx, name, 0, -1)
+	return b.getRange(ctx, path.Join(b.path, name), 0, -1)
 }
 
 // GetRange returns a new range reader for the given object name and range.
 func (b *Bucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
-	return b.getRange(ctx, name, off, length)
+	return b.getRange(ctx, path.Join(b.path, name), off, length)
 }
 
 // Exists checks if the given object exists.
 func (b *Bucket) Exists(ctx context.Context, name string) (bool, error) {
-	_, err := b.client.StatObject(b.name, name, minio.StatObjectOptions{})
+	_, err := b.client.StatObject(b.name, path.Join(b.path, name), minio.StatObjectOptions{})
 	if err != nil {
 		if b.IsObjNotFoundErr(err) {
 			return false, nil
@@ -302,11 +316,11 @@ func (b *Bucket) guessFileSize(name string, r io.Reader) int64 {
 		if err == nil {
 			return fileInfo.Size()
 		}
-		level.Warn(b.logger).Log("msg", "could not stat file for multipart upload", "name", name, "err", err)
+		level.Warn(b.logger).Log("msg", "could not stat file for multipart upload", "name", path.Join(b.path, name), "err", err)
 		return -1
 	}
 
-	level.Warn(b.logger).Log("msg", "could not guess file size for multipart upload", "name", name)
+	level.Warn(b.logger).Log("msg", "could not guess file size for multipart upload", "name", path.Join(b.path, name))
 	return -1
 }
 
@@ -323,7 +337,7 @@ func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
 	if _, err := b.client.PutObjectWithContext(
 		ctx,
 		b.name,
-		name,
+		path.Join(b.path, name),
 		r,
 		size,
 		minio.PutObjectOptions{
@@ -338,9 +352,18 @@ func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
 	return nil
 }
 
+// ObjectSize returns the size of the specified object.
+func (b *Bucket) ObjectSize(ctx context.Context, name string) (uint64, error) {
+	objInfo, err := b.client.StatObject(b.name, path.Join(b.path, name), minio.StatObjectOptions{})
+	if err != nil {
+		return 0, err
+	}
+	return uint64(objInfo.Size), nil
+}
+
 // Delete removes the object with the given name.
 func (b *Bucket) Delete(ctx context.Context, name string) error {
-	return b.client.RemoveObject(b.name, name)
+	return b.client.RemoveObject(b.name, path.Join(b.path, name))
 }
 
 // IsObjNotFoundErr returns true if error means that object is not found. Relevant to Get operations.
@@ -353,6 +376,7 @@ func (b *Bucket) Close() error { return nil }
 func configFromEnv() Config {
 	c := Config{
 		Bucket:    os.Getenv("S3_BUCKET"),
+		Path:      os.Getenv("S3_PATH"),
 		Endpoint:  os.Getenv("S3_ENDPOINT"),
 		AccessKey: os.Getenv("S3_ACCESS_KEY"),
 		SecretKey: os.Getenv("S3_SECRET_KEY"),

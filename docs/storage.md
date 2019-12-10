@@ -78,6 +78,7 @@ NOTE: Minio client was mainly for AWS S3, but it can be configured against other
 type: S3
 config:
   bucket: ""
+  path: ""
   endpoint: ""
   region: ""
   access_key: ""
@@ -106,6 +107,8 @@ You can configure the timeout settings for the HTTP client by setting the `http_
 Please refer to the documentation of [the Transport type](https://golang.org/pkg/net/http/#Transport) in the `net/http` package for detailed information on what each option does.
 
 `part_size` is specified in bytes and refers to the minimum file size used for multipart uploads, as some custom S3 implementations may have different requirements. A value of `0` means to use a default 128 MiB size.
+
+When `path` is specified client uses this value as a prefix for a path to the data. Essentially this allows saving the data into the subdirectory.  
 
 For debug and testing purposes you can set
 
