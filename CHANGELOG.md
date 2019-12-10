@@ -67,6 +67,7 @@ Compactor now properly handles partial block uploads for all operation like rete
 - [#1758](https://github.com/thanos-io/thanos/pull/1758) Bucket: `thanos bucket web` now supports `--web.external-prefix` for proxying on a subpath.
 - [#1770](https://github.com/thanos-io/thanos/pull/1770) Bucket: Add `--web.prefix-header` flags to allow for bucket UI to be accessible behind a reverse proxy.
 - [#1668](https://github.com/thanos-io/thanos/pull/1668) Receiver: Added TLS options for both server and client remote write.
+- [#1862](https://github.com/thanos-io/thanos/pull/1862) objstore/s3, docs/storage.md: Added 'path' field for S3 objstore
 
 ### Fixed
 
