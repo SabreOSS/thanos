@@ -335,7 +335,11 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 
 	err := s.bucket.Iter(ctx, "", func(name string) error {
 		// Strip trailing slash indicating a directory.
-		id, err := ulid.Parse(name[:len(name)-1])
+		name = name[:len(name)-1]
+		if nestedDirPos := strings.LastIndex(name, "/"); nestedDirPos != -1 {
+			name = name[nestedDirPos+1:]
+		}
+		id, err := ulid.Parse(name)
 		if err != nil {
 			return nil
 		}

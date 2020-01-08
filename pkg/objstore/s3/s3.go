@@ -230,17 +230,17 @@ func ValidateForTests(conf Config) error {
 func (b *Bucket) Iter(ctx context.Context, dir string, f func(string) error) error {
 	// Ensure the object name actually ends with a dir suffix. Otherwise we'll just iterate the
 	// object itself as one prefix item.
-	if dir != "" {
-		dir = strings.TrimSuffix(dir, DirDelim) + DirDelim
+	objPrefix := path.Join(b.path, dir)
+	if objPrefix != "" {
+		objPrefix = strings.TrimSuffix(objPrefix, DirDelim) + DirDelim
 	}
-	for object := range b.client.ListObjects(b.name, path.Join(b.path, dir), false, ctx.Done()) {
+	for object := range b.client.ListObjects(b.name, objPrefix, false, ctx.Done()) {
 		// Catch the error when failed to list objects.
 		if object.Err != nil {
 			return object.Err
 		}
 
-		key := strings.TrimPrefix(object.Key, b.path)
-
+		key := object.Key
 		// This sometimes happens with empty buckets.
 		if key == "" {
 			continue
@@ -270,7 +270,12 @@ func (b *Bucket) getRange(ctx context.Context, name string, off, length int64) (
 			return nil, err
 		}
 	}
-	r, err := b.client.GetObjectWithContext(ctx, b.name, path.Join(b.path, name), *opts)
+
+	namePrefixed := strings.HasPrefix(name, b.path)
+	if !namePrefixed {
+		name = path.Join(b.path, name)
+	}
+	r, err := b.client.GetObjectWithContext(ctx, b.name, name, *opts)
 	if err != nil {
 		return nil, err
 	}
@@ -289,12 +294,12 @@ func (b *Bucket) getRange(ctx context.Context, name string, off, length int64) (
 
 // Get returns a reader for the given object name.
 func (b *Bucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	return b.getRange(ctx, path.Join(b.path, name), 0, -1)
+	return b.getRange(ctx, name, 0, -1)
 }
 
 // GetRange returns a new range reader for the given object name and range.
 func (b *Bucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
-	return b.getRange(ctx, path.Join(b.path, name), off, length)
+	return b.getRange(ctx, name, off, length)
 }
 
 // Exists checks if the given object exists.
