@@ -344,7 +344,7 @@ func (h *Handler) parallelizeRequests(ctx context.Context, tenant string, replic
 				}
 				h.mtx.RUnlock()
 				if err != nil {
-					level.Error(h.logger).Log("msg", "storing locally", "err", err, "endpoint", endpoint)
+					level.Info(h.logger).Log("msg", "storing locally", "err", err, "endpoint", endpoint)
 				}
 				ec <- err
 			}(endpoint)
@@ -386,13 +386,13 @@ func (h *Handler) parallelizeRequests(ctx context.Context, tenant string, replic
 			var res *http.Response
 			res, err = h.client.Do(req.WithContext(ctx))
 			if err != nil {
-				level.Error(h.logger).Log("msg", "forwarding request", "err", err, "endpoint", endpoint)
+				level.Info(h.logger).Log("msg", "forwarding request", "err", err, "endpoint", endpoint)
 				ec <- err
 				return
 			}
 			if res.StatusCode != http.StatusOK {
 				err = errors.New(strconv.Itoa(res.StatusCode))
-				level.Error(h.logger).Log("msg", "forwarding returned non-200 status", "err", err, "endpoint", endpoint)
+				level.Info(h.logger).Log("msg", "forwarding returned non-200 status", "err", err, "endpoint", endpoint)
 				ec <- err
 				return
 			}
