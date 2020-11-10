@@ -44,6 +44,7 @@ func registerReceive(m map[string]setupFunc, app *kingpin.Application) {
 
 	httpBindAddr, httpGracePeriod := regHTTPFlags(cmd)
 	grpcBindAddr, grpcGracePeriod, grpcCert, grpcKey, grpcClientCA := regGRPCFlags(cmd)
+	grpcMaxRecvMsgSize := cmd.Flag("grpc-max-recv-msg-size", "gRPC max receive message size (bytes)").Default("4194304").Int()
 
 	rwAddress := cmd.Flag("remote-write.address", "Address to listen on for remote write requests.").
 		Default("0.0.0.0:19291").String()
@@ -140,6 +141,7 @@ func registerReceive(m map[string]setupFunc, app *kingpin.Application) {
 			*grpcCert,
 			*grpcKey,
 			*grpcClientCA,
+			*grpcMaxRecvMsgSize,
 			*httpBindAddr,
 			time.Duration(*httpGracePeriod),
 			*rwAddress,
@@ -179,6 +181,7 @@ func runReceive(
 	grpcCert string,
 	grpcKey string,
 	grpcClientCA string,
+	grpcMaxRecvMsgSize int,
 	httpBindAddr string,
 	httpGracePeriod time.Duration,
 	rwAddress string,
@@ -467,6 +470,7 @@ func runReceive(
 					grpcserver.WithListen(grpcBindAddr),
 					grpcserver.WithGracePeriod(grpcGracePeriod),
 					grpcserver.WithTLSConfig(tlsCfg),
+					grpcserver.WithMaxRecvMsgSize(grpcMaxRecvMsgSize),
 				)
 				startGRPC <- struct{}{}
 			}

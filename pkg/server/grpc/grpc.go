@@ -85,6 +85,10 @@ func New(logger log.Logger, reg prometheus.Registerer, tracer opentracing.Tracer
 	if options.tlsConfig != nil {
 		grpcOpts = append(grpcOpts, grpc.Creds(credentials.NewTLS(options.tlsConfig)))
 	}
+	if options.maxRecvMsgSize != 0 {
+		grpcOpts = append(grpcOpts, grpc.MaxRecvMsgSize(options.maxRecvMsgSize))
+	}
+
 	s := grpc.NewServer(grpcOpts...)
 
 	if rulesSrv != nil {

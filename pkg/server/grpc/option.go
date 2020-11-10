@@ -11,11 +11,11 @@ import (
 const UnixSocket = "/tmp/test.sock"
 
 type options struct {
-	gracePeriod time.Duration
-	listen      string
-	network     string
-
-	tlsConfig *tls.Config
+	gracePeriod    time.Duration
+	listen         string
+	network        string
+	maxRecvMsgSize int
+	tlsConfig      *tls.Config
 }
 
 // Option overrides behavior of Server.
@@ -56,5 +56,11 @@ func WithNetwork(s string) Option {
 func WithTLSConfig(cfg *tls.Config) Option {
 	return optionFunc(func(o *options) {
 		o.tlsConfig = cfg
+	})
+}
+
+func WithMaxRecvMsgSize(i int) Option {
+	return optionFunc(func(o *options) {
+		o.maxRecvMsgSize = i
 	})
 }
