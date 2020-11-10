@@ -69,6 +69,7 @@ func New(logger log.Logger, reg prometheus.Registerer, tracer opentracing.Tracer
 
 	options.grpcOpts = append(options.grpcOpts, []grpc.ServerOption{
 		grpc.MaxSendMsgSize(math.MaxInt32),
+		grpc.MaxRecvMsgSize(math.MaxInt32),
 		grpc_middleware.WithUnaryServerChain(
 			met.UnaryServerInterceptor(),
 			tracing.UnaryServerInterceptor(tracer),
