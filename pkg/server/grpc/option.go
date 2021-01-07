@@ -16,7 +16,7 @@ type options struct {
 	gracePeriod time.Duration
 	listen      string
 	network     string
-
+	maxRecvMsgSize int
 	tlsConfig *tls.Config
 
 	grpcOpts []grpc.ServerOption
@@ -78,5 +78,11 @@ func WithNetwork(s string) Option {
 func WithTLSConfig(cfg *tls.Config) Option {
 	return optionFunc(func(o *options) {
 		o.tlsConfig = cfg
+	})
+}
+
+func WithMaxRecvMsgSize(i int) Option {
+	return optionFunc(func(o *options) {
+		o.maxRecvMsgSize = i
 	})
 }
